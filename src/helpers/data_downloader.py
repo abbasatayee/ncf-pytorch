@@ -3,15 +3,6 @@ import urllib.request
 import zipfile
 
 def download_ml1m_dataset(data_dir='./data'):
-    """
-    Downloads the MovieLens 1M dataset from the official source.
-    
-    Parameters:
-    - data_dir: Directory where data will be stored
-    
-    Returns:
-    - Path to the ratings.dat file
-    """
     # Create data directory if it doesn't exist
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
