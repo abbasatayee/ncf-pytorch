@@ -54,14 +54,25 @@ class NCFInferenceEngine(InferenceEngine):
     
     def predict(self, user_id: int, item_id: int) -> float:
         """
-        Predict score for a single user-item pair.
+        Predict interaction score for a single user-item pair.
+        
+        NOTE: NCF models are trained on implicit feedback (binary classification)
+        using BCEWithLogitsLoss. The output is a LOGIT (unbounded real number),
+        NOT a probability (0-1) or a rating (1-5). 
+        
+        - Logits can be negative, zero, or positive (e.g., -2.5, 0.0, 3.2)
+        - Higher logits = higher likelihood of user-item interaction
+        - To convert to probability [0,1]: apply torch.sigmoid(logit)
+        - The absolute value is not calibrated to any specific scale
+        
+        For actual rating prediction (1-5 scale), use AutoRec model instead.
         
         Args:
             user_id: User ID
             item_id: Item ID
         
         Returns:
-            Prediction score
+            Interaction score (logit) - unbounded (-∞ to +∞), higher = more likely to interact
         """
         if self.model is None:
             raise HTTPException(status_code=503, detail="NCF model not loaded")
@@ -78,14 +89,16 @@ class NCFInferenceEngine(InferenceEngine):
     
     def predict_batch(self, user_id: int, item_ids: List[int]) -> List[PredictionItem]:
         """
-        Predict scores for a user and multiple items.
+        Predict interaction scores for a user and multiple items.
+        
+        NOTE: Returns interaction scores (logits), not ratings. See predict() docstring.
         
         Args:
             user_id: User ID
             item_ids: List of item IDs
         
         Returns:
-            List of predictions sorted by score (descending)
+            List of predictions sorted by interaction score (descending)
         """
         if self.model is None:
             raise HTTPException(status_code=503, detail="NCF model not loaded")
@@ -191,12 +204,16 @@ class AutoRecInferenceEngine(InferenceEngine):
         """
         Predict rating for a single user-item pair.
         
+        NOTE: AutoRec is trained on explicit feedback (ratings 1-5) and outputs
+        actual predicted ratings clamped to [1.0, 5.0] range. This is different
+        from NCF which outputs interaction scores (logits).
+        
         Args:
             user_id: User ID
             item_id: Item ID
         
         Returns:
-            Prediction score (rating)
+            Predicted rating (1.0 to 5.0)
         """
         if self.model is None or self.training_tensor is None:
             raise HTTPException(
