@@ -1,39 +1,65 @@
-# NCF
+# Recommendation System
 
-### A pytorch GPU implementation of He et al. "Neural Collaborative Filtering" at WWW'17
+A PyTorch implementation of neural collaborative filtering models for recommendation systems, including:
 
-Note that I use the two sub datasets provided by Xiangnan's [repo](https://github.com/hexiangnan/neural_collaborative_filtering/tree/master/Data).
+- **NCF (Neural Collaborative Filtering)**: Implementation of He et al. "Neural Collaborative Filtering" at WWW'17
+- **AutoRec**: Autoencoder-based collaborative filtering model
+- **HybridAutoRecNCF**: Hybrid model combining AutoRec and NCF
 
-I randomly utilized a factor number **32**, MLP layers **3**, epochs is **20**, and posted the results in the original paper and this implementation here. I employed the **exactly same settings** with Xiangnan, including batch_size, learning rate, and all the initialization methods in Xiangnan's keras repo. From the results I observed, this repo can replicate the performance of the original NCF.
-Xiangnan's keras [repo](https://github.com/hexiangnan/neural_collaborative_filtering):
+This project provides both training notebooks and a production-ready FastAPI inference service for making recommendations using trained models.
 
-## The requirements are as follows:
+## Dataset
 
-    * python==3.6
-    * pandas==0.24.2
-    * numpy==1.16.2
-    * pytorch==1.0.1
-    * gensim==3.7.1
-    * tensorboardX==1.6 (mainly useful when you want to visulize the loss, see https://github.com/lanpa/tensorboard-pytorch)
+The project uses the MovieLens 1M dataset. The data is processed from the format provided by Xiangnan's [NCF repository](https://github.com/hexiangnan/neural_collaborative_filtering/tree/master/Data).
+
+## Model Training
+
+### NCF Model
+- Factor number: **32**
+- MLP layers: **3**
+- Epochs: **20**
+- The implementation replicates the performance of the original NCF paper using the same settings (batch size, learning rate, initialization methods) as Xiangnan's [keras repository](https://github.com/hexiangnan/neural_collaborative_filtering).
+
+### AutoRec Model
+- Item-based autoencoder architecture
+- Hidden units: **500**
+- Trained on explicit ratings from the MovieLens dataset
+
+## Requirements
+
+The project requires Python 3.6+ with the following key dependencies:
+
+- `torch` (PyTorch)
+- `pandas`
+- `numpy`
+- `fastapi`
+- `uvicorn`
+- `scikit-learn`
+- `matplotlib`
+- `tqdm`
+
+For a complete list of dependencies, see `requirements.txt`. Install all dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Inference API
 
-A FastAPI-based inference service is provided for making predictions and recommendations using the trained NCF model.
-
-### Installation
-
-Install the API dependencies:
-
-```bash
-pip install -r requirements_api.txt
-```
+A FastAPI-based inference service is provided for making predictions and recommendations using trained NCF and AutoRec models.
 
 ### Running the API
 
-Start the inference server:
+Start the inference server from the project root:
 
 ```bash
-python inference.py
+python src/api/inference.py
+```
+
+Or using uvicorn directly:
+
+```bash
+uvicorn src.api.inference:app --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at `http://localhost:8000`
@@ -47,21 +73,54 @@ Interactive API documentation is available at:
 
 ### API Endpoints
 
-#### 1. Health Check
+#### General Endpoints
+
+##### Root Endpoint
+
+```bash
+GET /
+```
+
+Returns API information and available models.
+
+##### Health Check
 
 ```bash
 GET /health
 ```
 
-Returns the health status of the API and model information.
+Returns the health status of the API, loaded models, and configuration information.
 
-#### 2. Single Prediction
+**Response:**
 
-```bash
-POST /predict
+```json
+{
+  "status": "healthy",
+  "ncf_loaded": true,
+  "autorec_loaded": true,
+  "device": "cuda",
+  "ncf_config": {
+    "user_num": 6038,
+    "item_num": 3533
+  },
+  "autorec_config": {
+    "user_num": 6040,
+    "item_num": 3706
+  }
+}
 ```
 
-Predict interaction score for a single user-item pair.
+#### NCF Endpoints
+
+All NCF endpoints are prefixed with `/ncf`.
+
+##### 1. Single Prediction
+
+```bash
+POST /ncf/predict
+```
+
+Predict interaction score for a single user-item pair using NCF.
 
 **Request Body:**
 
@@ -79,17 +138,20 @@ Predict interaction score for a single user-item pair.
   "user_id": 0,
   "item_id": 100,
   "score": 0.85,
-  "message": "Prediction successful"
+  "movie": {
+    "title": "Movie Title",
+    "genres": ["Action", "Adventure"]
+  }
 }
 ```
 
-#### 3. Batch Prediction
+##### 2. Batch Prediction
 
 ```bash
-POST /predict/batch
+POST /ncf/predict/batch
 ```
 
-Predict scores for a user and multiple items.
+Predict scores for a user and multiple items using NCF.
 
 **Request Body:**
 
@@ -109,18 +171,17 @@ Predict scores for a user and multiple items.
     { "item_id": 300, "score": 0.92 },
     { "item_id": 100, "score": 0.85 },
     { "item_id": 200, "score": 0.78 }
-  ],
-  "message": "Batch prediction successful"
+  ]
 }
 ```
 
-#### 4. Recommendations
+##### 3. Recommendations
 
 ```bash
-POST /recommend
+POST /ncf/recommend
 ```
 
-Get top-K item recommendations for a user.
+Get top-K item recommendations for a user using NCF.
 
 **Request Body:**
 
@@ -139,13 +200,19 @@ Get top-K item recommendations for a user.
   "user_id": 0,
   "recommendations": [
     {"item_id": 1234, "score": 0.95},
-    {"item_id": 5678, "score": 0.92},
-    ...
+    {"item_id": 5678, "score": 0.92}
   ],
-  "k": 10,
-  "message": "Recommendations generated successfully"
+  "k": 10
 }
 ```
+
+#### AutoRec Endpoints
+
+All AutoRec endpoints are prefixed with `/autorec` and follow the same structure as NCF endpoints:
+
+- `POST /autorec/predict` - Single prediction
+- `POST /autorec/predict/batch` - Batch prediction
+- `POST /autorec/recommend` - Top-K recommendations
 
 ### Example Usage
 
@@ -155,13 +222,18 @@ Get top-K item recommendations for a user.
 # Health check
 curl http://localhost:8000/health
 
-# Single prediction
-curl -X POST "http://localhost:8000/predict" \
+# NCF single prediction
+curl -X POST "http://localhost:8000/ncf/predict" \
   -H "Content-Type: application/json" \
   -d '{"user_id": 0, "item_id": 100}'
 
-# Get recommendations
-curl -X POST "http://localhost:8000/recommend" \
+# NCF recommendations
+curl -X POST "http://localhost:8000/ncf/recommend" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 0, "k": 10}'
+
+# AutoRec recommendations
+curl -X POST "http://localhost:8000/autorec/recommend" \
   -H "Content-Type: application/json" \
   -d '{"user_id": 0, "k": 10}'
 ```
@@ -171,16 +243,23 @@ curl -X POST "http://localhost:8000/recommend" \
 ```python
 import requests
 
-# Single prediction
+# NCF single prediction
 response = requests.post(
-    "http://localhost:8000/predict",
+    "http://localhost:8000/ncf/predict",
     json={"user_id": 0, "item_id": 100}
 )
 print(response.json())
 
-# Get recommendations
+# NCF recommendations
 response = requests.post(
-    "http://localhost:8000/recommend",
+    "http://localhost:8000/ncf/recommend",
+    json={"user_id": 0, "k": 10}
+)
+print(response.json())
+
+# AutoRec recommendations
+response = requests.post(
+    "http://localhost:8000/autorec/recommend",
     json={"user_id": 0, "k": 10}
 )
 print(response.json())
@@ -188,9 +267,65 @@ print(response.json())
 
 ### Configuration
 
-The API configuration can be modified in `inference.py`:
+The API configuration can be modified in `src/api/config.py`:
 
-- `MODEL_PATH`: Path to the trained model file
-- `DEVICE`: Device to use ('cpu' or 'cuda')
-- `USER_NUM`: Number of users in the dataset
-- `ITEM_NUM`: Number of items in the dataset
+- `NCF_MODEL_PATH`: Path to the trained NCF model file (default: `models/NeuMF.pth`)
+- `AUTOREC_MODEL_PATH`: Path to the trained AutoRec model file (default: `models/AutoRec-best.pth`)
+- `DEVICE`: Device to use ('cpu' or 'cuda', auto-detected)
+- `NCF_CONFIG`: NCF model configuration (user_num, item_num, factor_num, etc.)
+- `AUTOREC_CONFIG`: AutoRec model configuration (user_num, item_num, hidden_units, etc.)
+- `API_PORT`: Port for the API server (default: 8000)
+
+## Project Structure
+
+```
+recommender/
+├── data/                    # Dataset files (MovieLens 1M)
+│   └── ml-1m/
+├── models/                  # Trained model checkpoints
+├── src/
+│   ├── api/                 # FastAPI inference service
+│   │   ├── core/            # Core inference logic
+│   │   ├── routes/          # API route handlers
+│   │   └── inference.py     # API entry point
+│   ├── ncf/                 # NCF model training notebooks
+│   ├── autorec/             # AutoRec model training notebooks
+│   ├── hybridautorecncf/    # Hybrid model training notebooks
+│   └── helpers/              # Utility functions
+├── requirements.txt          # Python dependencies
+└── README.md                # This file
+```
+
+## Additional Documentation
+
+The project includes several documentation files explaining key concepts:
+
+- **EXPLANATION_NCF_RATINGS.md**: Explains why NCF predicts interaction scores (not ratings) despite being used for rating prediction
+- **IMPLICIT_VS_EXPLICIT_FEEDBACK.md**: Discussion on implicit vs explicit feedback in recommendation systems
+- **NCF_OUTPUT_RANGE.md**: Information about NCF model output ranges and interpretation
+
+## Training Models
+
+Model training notebooks are located in:
+
+- `src/ncf/` - NCF model training and evaluation
+- `src/autorec/` - AutoRec model training and evaluation
+- `src/hybridautorecncf/` - Hybrid model training
+
+Each notebook includes data preprocessing, model training, evaluation, and model saving functionality.
+
+## Model Files
+
+Pre-trained models should be placed in the `models/` directory:
+
+- `NeuMF.pth` - NCF (NeuMF) model
+- `AutoRec-best.pth` - AutoRec model
+- `HybridAutoRecNCF.pth` - Hybrid model
+
+The API will automatically load these models on startup if they exist.
+
+## License
+
+This project implements models from academic papers:
+- NCF: He et al. "Neural Collaborative Filtering" (WWW 2017)
+- AutoRec: Sedhain et al. "AutoRec: Autoencoders Meet Collaborative Filtering" (WWW 2015)
